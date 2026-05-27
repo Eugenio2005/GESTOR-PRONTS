@@ -1,0 +1,11 @@
+# Matar TODO proceso uvicorn/python que pueda estar usando el puerto 8000
+pkill -9 -f "uvicorn main:app" 2>/dev/null
+kill -9 $(lsof -ti:8000) 2>/dev/null
+
+# Esperar a que el puerto quede libre
+sleep 2
+
+# Arrancar desde el directorio del proyecto
+cd "$(dirname "$0")" 2>/dev/null || cd /home/eulorentecristobal/Vaults/Eugenio/Gestor-pronts
+source venv/bin/activate
+uvicorn main:app --host 0.0.0.0 --port 8000

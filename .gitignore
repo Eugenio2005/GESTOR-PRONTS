@@ -1,0 +1,38 @@
+# ── Entorno Python ──────────────────────────────────────────────
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── Variables de entorno ─────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Base de datos SQLite ─────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+
+# ── Datos de usuario (archivos subidos) ──────────────────────────
+data/consultas/
+
+# ── Tests ────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Editors / OS ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Logs ─────────────────────────────────────────────────────────
+*.log
+logs/

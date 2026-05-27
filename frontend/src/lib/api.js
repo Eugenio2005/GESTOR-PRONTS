@@ -87,6 +87,7 @@ export function getHistorial(page = 1, q = '', filters = {}) {
   if (filters.date_to) params.set('date_to', filters.date_to)
   if (filters.status) params.set('status', filters.status)
   if (filters.tag) params.set('tag', filters.tag)
+  if (filters.favorites) params.set('favorites', 'true')
   return apiFetch(`/api/historial?${params}`)
 }
 
@@ -177,8 +178,8 @@ export function reorderAdminSections(order) {
 }
 
 // ─── Admin Users ──────────────────────────────────────────────
-export function getAdminUsers() {
-  return apiFetch('/api/admin/users')
+export function getAdminUsers(qs = '') {
+  return apiFetch(`/api/admin/users${qs}`)
 }
 
 export function createAdminUser(data) {
@@ -270,6 +271,34 @@ export function exportMyHistorial() {
 
 export function exportMyHistorialPdf() {
   return apiFetch('/api/historial/export?format=pdf')
+}
+
+// ─── Favorites ────────────────────────────────────────────────
+export function toggleFavorite(id) {
+  return apiFetch(`/api/historial/${id}/favorite`, { method: 'PATCH' })
+}
+
+// ─── App config ───────────────────────────────────────────────
+export function getAppConfig() {
+  return apiFetch('/api/config')
+}
+
+// ─── Admin queries export ─────────────────────────────────────
+export function exportAdminQueries(format = 'csv', filters = {}) {
+  const params = new URLSearchParams({ format })
+  if (filters.section_id) params.set('section_id', filters.section_id)
+  if (filters.user_id) params.set('user_id', filters.user_id)
+  if (filters.status) params.set('status', filters.status)
+  return apiFetch(`/api/admin/queries/export?${params}`)
+}
+
+// ─── Soft-delete restore ──────────────────────────────────────
+export function restoreAdminUser(id) {
+  return apiFetch(`/api/admin/users/${id}/restore`, { method: 'POST' })
+}
+
+export function restoreAdminSection(id) {
+  return apiFetch(`/api/admin/sections/${id}/restore`, { method: 'POST' })
 }
 
 // ─── Section versions ─────────────────────────────────────────

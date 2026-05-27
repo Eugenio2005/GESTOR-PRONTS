@@ -15,7 +15,9 @@ export default function FileZone({ onFiles, initialFiles = [], accept = '*', cla
   function addFiles(newFiles) {
     if (!newFiles || newFiles.length === 0) return
     setFiles((prev) => {
-      const combined = [...prev, ...Array.from(newFiles)]
+      const existingNames = new Set(prev.map(f => f.name))
+      const unique = Array.from(newFiles).filter(f => !existingNames.has(f.name))
+      const combined = [...prev, ...unique]
       onFiles(combined)
       return combined
     })

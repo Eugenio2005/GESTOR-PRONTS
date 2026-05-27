@@ -19,6 +19,7 @@ class Section(Base):
     quick_inputs = Column(Text, nullable=True)  # JSON array of preset strings
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class User(Base):
@@ -33,6 +34,7 @@ class User(Base):
     daily_limit = Column(Integer, nullable=True)   # max queries per day, None=unlimited
     monthly_limit = Column(Integer, nullable=True)  # max queries per month
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class UserSection(Base):
@@ -64,6 +66,7 @@ class Query(Base):
     error_msg = Column(Text, nullable=True)
     tags = Column(Text, nullable=True)          # JSON array of strings
     is_protected = Column(Boolean, default=False, nullable=False)
+    is_favorite = Column(Boolean, default=False, nullable=False)
     is_comparison = Column(Boolean, default=False, nullable=False)
     model_b = Column(String(50), nullable=True)  # second model in comparison
     result_b = Column(Text, nullable=True)        # result from model_b

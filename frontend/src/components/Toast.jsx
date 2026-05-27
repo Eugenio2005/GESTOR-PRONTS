@@ -63,7 +63,7 @@ export function ToastProvider({ children }) {
 
   const toast = useCallback((message, type = 'info') => {
     const id = ++_id
-    setToasts((prev) => [...prev, { id, message, type }])
+    setToasts((prev) => [...prev.slice(-4), { id, message, type }])
   }, [])
 
   return (

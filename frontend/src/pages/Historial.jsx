@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, FileText, CheckCircle, XCircle, Clock, Search, Tag, SlidersHorizontal, ChevronDown, X, Download } from 'lucide-react'
-import { getHistorial, exportMyHistorial, exportMyHistorialPdf } from '../lib/api'
+import { ArrowLeft, ChevronLeft, ChevronRight, FileText, CheckCircle, XCircle, Clock, Search, Tag, SlidersHorizontal, ChevronDown, X, Download, Star } from 'lucide-react'
+import { getHistorial, exportMyHistorial, exportMyHistorialPdf, toggleFavorite } from '../lib/api'
 import Spinner from '../components/Spinner'
 
 function StatusBadge({ status }) {
@@ -29,7 +29,7 @@ function StatusBadge({ status }) {
   )
 }
 
-function HistorialCard({ item, onClick, onTagClick }) {
+function HistorialCard({ item, onClick, onTagClick, onToggleFavorite }) {
   const date = new Date(item.created_at)
   const dateStr = date.toLocaleDateString('es-ES', {
     day: '2-digit', month: 'short', year: 'numeric',
@@ -60,6 +60,13 @@ function HistorialCard({ item, onClick, onTagClick }) {
             </span>
           )}
           <StatusBadge status={item.status} />
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleFavorite && onToggleFavorite(item) }}
+            title={item.is_favorite ? 'Quitar favorito' : 'Marcar como favorito'}
+            className={`transition-colors ${item.is_favorite ? 'text-yellow-400' : 'text-muted hover:text-yellow-400'}`}
+          >
+            <Star size={13} fill={item.is_favorite ? 'currentColor' : 'none'} />
+          </button>
         </div>
       </div>
 
@@ -121,9 +128,11 @@ export default function Historial() {
   const debounceRef = useRef(null)
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState({ section_id: '', date_from: '', date_to: '', status: '', tag: '' })
+  const [onlyFavorites, setOnlyFavorites] = useState(false)
   const [availableSections, setAvailableSections] = useState([])
   const [exporting, setExporting] = useState(false)
   const [exportingPdf, setExportingPdf] = useState(false)
+  const abortRef = useRef(null)
 
   const activeFiltersCount = Object.values(filters).filter(v => v !== '').length
 
@@ -189,14 +198,40 @@ export default function Historial() {
     setShowFilters(true)
   }
 
+  async function handleToggleFavorite(item) {
+    try {
+      const res = await toggleFavorite(item.id)
+      setData(prev => prev ? ({
+        ...prev,
+        items: prev.items.map(i => i.id === item.id ? { ...i, is_favorite: res.is_favorite } : i),
+      }) : prev)
+    } catch (err) {
+      console.error('Error al actualizar favorito:', err)
+    }
+  }
+
   useEffect(() => {
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
     setError('')
-    getHistorial(page, debouncedQ, filters)
-      .then(d => { setData(d); if (d.sections) setAvailableSections(d.sections) })
-      .catch((err) => setError(err.message || 'Error al cargar el historial'))
-      .finally(() => setLoading(false))
-  }, [page, debouncedQ, filters])
+    getHistorial(page, debouncedQ, { ...filters, favorites: onlyFavorites })
+      .then(d => {
+        if (controller.signal.aborted) return
+        setData(d)
+        if (d.sections) setAvailableSections(d.sections)
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return
+        setError(err.message || 'Error al cargar el historial')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    return () => controller.abort()
+  }, [page, debouncedQ, filters, onlyFavorites])
 
   return (
     <div className="min-h-screen bg-bg">
@@ -218,26 +253,36 @@ export default function Historial() {
               </p>
             )}
           </div>
-          {data?.total > 0 && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleExport}
-                disabled={exporting}
-                className="flex items-center gap-2 bg-surface border border-border hover:border-accent text-fore text-sm font-medium px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
-              >
-                <Download size={14} />
-                {exporting ? 'Exportando...' : 'CSV'}
-              </button>
-              <button
-                onClick={handleExportPdf}
-                disabled={exportingPdf}
-                className="flex items-center gap-2 bg-surface border border-border hover:border-accent text-fore text-sm font-medium px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
-              >
-                <Download size={14} />
-                {exportingPdf ? 'Exportando...' : 'PDF'}
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setOnlyFavorites(v => !v); setPage(1) }}
+              className={`flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border transition-colors ${onlyFavorites ? 'bg-yellow-500/10 border-yellow-500/40 text-yellow-400' : 'bg-surface border-border text-muted hover:border-accent hover:text-fore'}`}
+              title="Ver solo favoritos"
+            >
+              <Star size={14} fill={onlyFavorites ? 'currentColor' : 'none'} />
+              Favoritos
+            </button>
+            {data?.total > 0 && (
+              <>
+                <button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="flex items-center gap-2 bg-surface border border-border hover:border-accent text-fore text-sm font-medium px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <Download size={14} />
+                  {exporting ? 'Exportando...' : 'CSV'}
+                </button>
+                <button
+                  onClick={handleExportPdf}
+                  disabled={exportingPdf}
+                  className="flex items-center gap-2 bg-surface border border-border hover:border-accent text-fore text-sm font-medium px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <Download size={14} />
+                  {exportingPdf ? 'Exportando...' : 'PDF'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Search bar */}
@@ -366,6 +411,7 @@ export default function Historial() {
                   item={item}
                   onClick={() => navigate(`/historial/${item.id}`)}
                   onTagClick={handleTagClick}
+                  onToggleFavorite={handleToggleFavorite}
                 />
               ))}
             </div>

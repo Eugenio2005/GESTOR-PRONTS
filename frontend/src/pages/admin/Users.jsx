@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Trash2, UserCheck, UserX, X, Save, Eye, EyeOff, KeyRound, Copy, Check, Layers } from 'lucide-react'
+import { Plus, Edit2, Trash2, UserCheck, UserX, X, Save, Eye, EyeOff, KeyRound, Copy, Check, Layers, RotateCcw } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import {
   getAdminUsers, createAdminUser, updateAdminUser,
   toggleAdminUser, deleteAdminUser, generateResetToken,
-  getAdminSections, setUserSections,
+  getAdminSections, setUserSections, restoreAdminUser,
 } from '../../lib/api'
 import Spinner from '../../components/Spinner'
 import { ToastProvider, useToast } from '../../components/Toast'
@@ -338,11 +338,13 @@ function UsersInner() {
   const [generatingReset, setGeneratingReset] = useState(null)
   const [copiedReset, setCopiedReset] = useState(false)
   const [sectionsUser, setSectionsUser] = useState(null)
-  const [confirmDelete, setConfirmDelete] = useState(null) // user obj to delete
+  const [confirmDelete, setConfirmDelete] = useState(null)
+  const [showDeleted, setShowDeleted] = useState(false)
 
   async function load() {
     try {
-      const data = await getAdminUsers()
+      const params = showDeleted ? '?include_deleted=true' : ''
+      const data = await getAdminUsers(params)
       setUsers(data)
     } catch (err) {
       toast(err.message || 'Error al cargar usuarios', 'error')
@@ -351,7 +353,17 @@ function UsersInner() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [showDeleted])
+
+  async function handleRestore(id) {
+    try {
+      await restoreAdminUser(id)
+      toast('Usuario restaurado', 'success')
+      await load()
+    } catch (err) {
+      toast(err.message || 'Error al restaurar', 'error')
+    }
+  }
 
   async function handleToggle(id) {
     setToggling(id)
@@ -407,16 +419,25 @@ function UsersInner() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-fore text-2xl font-semibold">Usuarios</h1>
-          <p className="text-muted text-sm mt-1">{users.length} usuarios registrados</p>
+          <p className="text-muted text-sm mt-1">{users.filter(u => !u.deleted_at).length} activos{showDeleted && users.some(u => u.deleted_at) ? ` · ${users.filter(u => u.deleted_at).length} eliminados` : ''}</p>
         </div>
-        <button
-          onClick={() => setModalUser(null)}
-          className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-white
-            font-medium px-4 py-2.5 rounded-lg transition-colors text-sm"
-        >
-          <Plus size={16} />
-          Nuevo usuario
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowDeleted(v => !v)}
+            className={`flex items-center gap-2 border text-sm font-medium px-4 py-2.5 rounded-lg transition-colors ${showDeleted ? 'bg-danger/10 border-danger/30 text-danger' : 'bg-surface border-border text-muted hover:border-accent hover:text-fore'}`}
+          >
+            <Trash2 size={15} />
+            {showDeleted ? 'Ocultar eliminados' : 'Ver eliminados'}
+          </button>
+          <button
+            onClick={() => setModalUser(null)}
+            className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-white
+              font-medium px-4 py-2.5 rounded-lg transition-colors text-sm"
+          >
+            <Plus size={16} />
+            Nuevo usuario
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -444,7 +465,7 @@ function UsersInner() {
               {users.map((u) => (
                 <tr
                   key={u.id}
-                  className="border-b border-border/50 hover:bg-surface2/30 transition-colors"
+                  className={`border-b border-border/50 hover:bg-surface2/30 transition-colors ${u.deleted_at ? 'opacity-50' : ''}`}
                 >
                   {/* User info */}
                   <td className="px-5 py-4">
@@ -502,54 +523,60 @@ function UsersInner() {
                   {/* Actions */}
                   <td className="px-5 py-4">
                     <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => setModalUser(u)}
-                        className="p-2 text-muted hover:text-fore hover:bg-surface2 rounded-lg transition-colors"
-                        title="Editar"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleToggle(u.id)}
-                        disabled={toggling === u.id}
-                        className={`p-2 rounded-lg transition-colors disabled:opacity-40
-                          ${u.is_active
-                            ? 'text-muted hover:text-danger hover:bg-danger/10'
-                            : 'text-muted hover:text-success hover:bg-success/10'
-                          }`}
-                        title={u.is_active ? 'Desactivar' : 'Activar'}
-                      >
-                        {toggling === u.id ? (
-                          <Spinner size={14} />
-                        ) : u.is_active ? (
-                          <UserX size={14} />
-                        ) : (
-                          <UserCheck size={14} />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => setSectionsUser(u)}
-                        className="p-2 text-muted hover:text-accent hover:bg-accent/10 rounded-lg transition-colors"
-                        title="Gestionar secciones"
-                      >
-                        <Layers size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleGenerateReset(u.id)}
-                        disabled={generatingReset === u.id}
-                        className="p-2 text-muted hover:text-accent hover:bg-accent/10 rounded-lg transition-colors disabled:opacity-40"
-                        title="Generar enlace de reset de contraseña"
-                      >
-                        {generatingReset === u.id ? <Spinner size={14} /> : <KeyRound size={14} />}
-                      </button>
-                      <button
-                        onClick={() => setConfirmDelete(u)}
-                        disabled={deleting === u.id}
-                        className="p-2 text-muted hover:text-danger hover:bg-danger/10 rounded-lg transition-colors disabled:opacity-40"
-                        title="Eliminar"
-                      >
-                        {deleting === u.id ? <Spinner size={14} /> : <Trash2 size={14} />}
-                      </button>
+                      {u.deleted_at ? (
+                        <button
+                          onClick={() => handleRestore(u.id)}
+                          className="flex items-center gap-1.5 text-xs text-success hover:text-success bg-success/10 hover:bg-success/20 px-2.5 py-1.5 rounded-lg transition-colors"
+                          title="Restaurar usuario"
+                        >
+                          <RotateCcw size={13} /> Restaurar
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setModalUser(u)}
+                            className="p-2 text-muted hover:text-fore hover:bg-surface2 rounded-lg transition-colors"
+                            title="Editar"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleToggle(u.id)}
+                            disabled={toggling === u.id}
+                            className={`p-2 rounded-lg transition-colors disabled:opacity-40
+                              ${u.is_active
+                                ? 'text-muted hover:text-danger hover:bg-danger/10'
+                                : 'text-muted hover:text-success hover:bg-success/10'
+                              }`}
+                            title={u.is_active ? 'Desactivar' : 'Activar'}
+                          >
+                            {toggling === u.id ? <Spinner size={14} /> : u.is_active ? <UserX size={14} /> : <UserCheck size={14} />}
+                          </button>
+                          <button
+                            onClick={() => setSectionsUser(u)}
+                            className="p-2 text-muted hover:text-accent hover:bg-accent/10 rounded-lg transition-colors"
+                            title="Gestionar secciones"
+                          >
+                            <Layers size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleGenerateReset(u.id)}
+                            disabled={generatingReset === u.id}
+                            className="p-2 text-muted hover:text-accent hover:bg-accent/10 rounded-lg transition-colors disabled:opacity-40"
+                            title="Generar enlace de reset"
+                          >
+                            {generatingReset === u.id ? <Spinner size={14} /> : <KeyRound size={14} />}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDelete(u)}
+                            disabled={deleting === u.id}
+                            className="p-2 text-muted hover:text-danger hover:bg-danger/10 rounded-lg transition-colors disabled:opacity-40"
+                            title="Eliminar (papelera)"
+                          >
+                            {deleting === u.id ? <Spinner size={14} /> : <Trash2 size={14} />}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -575,7 +602,7 @@ function UsersInner() {
       {confirmDelete && (
         <ConfirmDialog
           title="Eliminar usuario"
-          message={`¿Eliminar a "${confirmDelete.display_name}"? Esta acción no se puede deshacer y borrará todas sus consultas asociadas.`}
+          message={`¿Mover a "${confirmDelete.display_name}" a la papelera? El usuario no podrá acceder y su historial se conserva. Puedes restaurarlo después.`}
           confirmLabel="Eliminar usuario"
           loading={deleting === confirmDelete.id}
           onConfirm={() => handleDelete(confirmDelete.id)}

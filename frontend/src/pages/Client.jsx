@@ -4,7 +4,7 @@ import {
   History, LogOut, Copy, Check, Sparkles, ChevronRight, Zap,
   Download, X, MessageSquare, Info, FileText, Columns2, Sun, Moon,
 } from 'lucide-react'
-import { getSections, streamSection, logout, exportQueryPdf, exportQueryDocx, compareModels, getMyLimits } from '../lib/api'
+import { getSections, streamSection, logout, exportQueryPdf, exportQueryDocx, compareModels, getMyLimits, getAppConfig } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { ToastProvider, useToast } from '../components/Toast'
@@ -12,7 +12,7 @@ import Spinner from '../components/Spinner'
 import FileZone from '../components/FileZone'
 import MarkdownView from '../components/MarkdownView'
 
-const COMPANY = 'Pagola & Madorran'
+const COMPANY_FALLBACK = 'Gestor IA'
 
 // ─── ChatGPT Modal ────────────────────────────────────────────
 function ChatGPTModal({ prompt, onClose }) {
@@ -92,7 +92,9 @@ function ChatGPTModal({ prompt, onClose }) {
 
 // ─── CompareModal ─────────────────────────────────────────────
 function CompareModal({ section, text, onClose }) {
-  const [modelB, setModelB] = useState('gemini-2.0-flash')
+  const [modelB, setModelB] = useState(() =>
+    section.model === 'gemini-2.0-flash' ? 'gpt-4o' : 'gemini-2.0-flash'
+  )
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState(null)
   const [error, setError] = useState('')
@@ -101,7 +103,7 @@ function CompareModal({ section, text, onClose }) {
     'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo',
     'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash',
     'chatgpt-manual',
-  ]
+  ].filter(m => m !== section.model)
 
   async function handleCompare() {
     setLoading(true)
@@ -243,7 +245,7 @@ function LimitBar() {
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────
-function Sidebar({ sections, activeId, onSelect, user, onLogout }) {
+function Sidebar({ sections, activeId, onSelect, user, onLogout, companyName }) {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
 
@@ -257,7 +259,7 @@ function Sidebar({ sections, activeId, onSelect, user, onLogout }) {
           className="h-8 w-auto object-contain mb-2"
           onError={(e) => { e.target.style.display = 'none' }}
         />
-        <p className="text-muted text-xs font-medium tracking-wide">{COMPANY}</p>
+        <p className="text-muted text-xs font-medium tracking-wide">{companyName}</p>
       </div>
 
       {/* User info */}
@@ -859,7 +861,6 @@ function WelcomeState({ user }) {
           Selecciona una sección en el panel izquierdo para comenzar a procesar consultas.
         </p>
       </div>
-      <p className="text-muted/40 text-xs">{COMPANY}</p>
     </div>
   )
 }
@@ -873,6 +874,11 @@ function ClientInner() {
   const [loadingSections, setLoadingSections] = useState(true)
   const [retryText, setRetryText] = useState('')
   const [retryFiles, setRetryFiles] = useState([])
+  const [companyName, setCompanyName] = useState(COMPANY_FALLBACK)
+
+  useEffect(() => {
+    getAppConfig().then(cfg => { if (cfg?.company_name) setCompanyName(cfg.company_name) }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     getSections()
@@ -929,6 +935,7 @@ function ClientInner() {
         onSelect={setActiveSection}
         user={user}
         onLogout={handleLogout}
+        companyName={companyName}
       />
 
       <main className="flex-1 overflow-y-auto">

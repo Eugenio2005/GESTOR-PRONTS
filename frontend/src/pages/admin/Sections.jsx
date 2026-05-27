@@ -3,7 +3,7 @@ import { Plus, Edit2, Copy, Trash2, X, Save, ChevronUp, ChevronDown, Eye, Histor
 import {
   getAdminSections, createAdminSection, updateAdminSection,
   deleteAdminSection, duplicateAdminSection, reorderAdminSections,
-  getAdminUsers, getSectionVersions, restoreSectionVersion,
+  getAdminUsers, getSectionVersions, restoreSectionVersion, restoreAdminSection,
 } from '../../lib/api'
 import Spinner from '../../components/Spinner'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -596,11 +596,16 @@ function SectionsInner() {
   const [modalSection, setModalSection] = useState(undefined) // undefined=closed, null=new, obj=edit
   const [deleting, setDeleting] = useState(null)
   const [duplicating, setDuplicating] = useState(null)
-  const [confirmDeleteSection, setConfirmDeleteSection] = useState(null) // section obj
+  const [confirmDeleteSection, setConfirmDeleteSection] = useState(null)
+  const [showDeleted, setShowDeleted] = useState(false)
 
   async function load() {
     try {
-      const [s, u] = await Promise.all([getAdminSections(), getAdminUsers()])
+      const qs = showDeleted ? '?include_deleted=true' : ''
+      const [s, u] = await Promise.all([
+        fetch(`/api/admin/sections${qs}`, { credentials: 'include' }).then(r => r.json()),
+        getAdminUsers(),
+      ])
       setSections(s)
       setUsers(u)
     } catch (err) {
@@ -610,7 +615,17 @@ function SectionsInner() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [showDeleted])
+
+  async function handleRestoreSection(id) {
+    try {
+      await restoreAdminSection(id)
+      toast('Sección restaurada', 'success')
+      await load()
+    } catch (err) {
+      toast(err.message || 'Error al restaurar', 'error')
+    }
+  }
 
   async function handleDelete(id) {
     setDeleting(id)
@@ -667,16 +682,28 @@ function SectionsInner() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-fore text-2xl font-semibold">Secciones</h1>
-          <p className="text-muted text-sm mt-1">{sections.length} secciones configuradas</p>
+          <p className="text-muted text-sm mt-1">
+            {sections.filter(s => !s.deleted_at).length} activas
+            {showDeleted && sections.some(s => s.deleted_at) ? ` · ${sections.filter(s => s.deleted_at).length} eliminadas` : ''}
+          </p>
         </div>
-        <button
-          onClick={() => setModalSection(null)}
-          className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-white
-            font-medium px-4 py-2.5 rounded-lg transition-colors text-sm"
-        >
-          <Plus size={16} />
-          Nueva sección
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowDeleted(v => !v)}
+            className={`flex items-center gap-2 border text-sm font-medium px-4 py-2.5 rounded-lg transition-colors ${showDeleted ? 'bg-danger/10 border-danger/30 text-danger' : 'bg-surface border-border text-muted hover:border-accent hover:text-fore'}`}
+          >
+            <Trash2 size={15} />
+            {showDeleted ? 'Ocultar eliminadas' : 'Ver eliminadas'}
+          </button>
+          <button
+            onClick={() => setModalSection(null)}
+            className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-white
+              font-medium px-4 py-2.5 rounded-lg transition-colors text-sm"
+          >
+            <Plus size={16} />
+            Nueva sección
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -692,8 +719,7 @@ function SectionsInner() {
           {sections.map((sec, idx) => (
             <div
               key={sec.id}
-              className="bg-surface border border-border rounded-[10px] px-5 py-4
-                flex items-center gap-4 hover:border-border/80 transition-colors"
+              className={`bg-surface border border-border rounded-[10px] px-5 py-4 flex items-center gap-4 transition-colors ${sec.deleted_at ? 'opacity-50' : 'hover:border-border/80'}`}
             >
               {/* Order controls */}
               <div className="flex flex-col gap-0.5">
@@ -750,29 +776,41 @@ function SectionsInner() {
 
               {/* Actions */}
               <div className="flex items-center gap-1 shrink-0">
-                <button
-                  onClick={() => setModalSection(sec)}
-                  className="p-2 text-muted hover:text-fore hover:bg-surface2 rounded-lg transition-colors"
-                  title="Editar"
-                >
-                  <Edit2 size={15} />
-                </button>
-                <button
-                  onClick={() => handleDuplicate(sec.id)}
-                  disabled={duplicating === sec.id}
-                  className="p-2 text-muted hover:text-fore hover:bg-surface2 rounded-lg transition-colors disabled:opacity-40"
-                  title="Duplicar"
-                >
-                  {duplicating === sec.id ? <Spinner size={15} /> : <Copy size={15} />}
-                </button>
-                <button
-                  onClick={() => setConfirmDeleteSection(sec)}
-                  disabled={deleting === sec.id}
-                  className="p-2 text-muted hover:text-danger hover:bg-danger/10 rounded-lg transition-colors disabled:opacity-40"
-                  title="Eliminar"
-                >
-                  {deleting === sec.id ? <Spinner size={15} /> : <Trash2 size={15} />}
-                </button>
+                {sec.deleted_at ? (
+                  <button
+                    onClick={() => handleRestoreSection(sec.id)}
+                    className="flex items-center gap-1.5 text-xs text-success hover:text-success bg-success/10 hover:bg-success/20 px-2.5 py-1.5 rounded-lg transition-colors"
+                    title="Restaurar sección"
+                  >
+                    <RotateCcw size={13} /> Restaurar
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setModalSection(sec)}
+                      className="p-2 text-muted hover:text-fore hover:bg-surface2 rounded-lg transition-colors"
+                      title="Editar"
+                    >
+                      <Edit2 size={15} />
+                    </button>
+                    <button
+                      onClick={() => handleDuplicate(sec.id)}
+                      disabled={duplicating === sec.id}
+                      className="p-2 text-muted hover:text-fore hover:bg-surface2 rounded-lg transition-colors disabled:opacity-40"
+                      title="Duplicar"
+                    >
+                      {duplicating === sec.id ? <Spinner size={15} /> : <Copy size={15} />}
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteSection(sec)}
+                      disabled={deleting === sec.id}
+                      className="p-2 text-muted hover:text-danger hover:bg-danger/10 rounded-lg transition-colors disabled:opacity-40"
+                      title="Mover a papelera"
+                    >
+                      {deleting === sec.id ? <Spinner size={15} /> : <Trash2 size={15} />}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -795,7 +833,7 @@ function SectionsInner() {
       {confirmDeleteSection && (
         <ConfirmDialog
           title="Eliminar sección"
-          message={`¿Eliminar la sección "${confirmDeleteSection.name}"? Esta acción no se puede deshacer y se perderá todo su historial de consultas.`}
+          message={`¿Mover la sección "${confirmDeleteSection.name}" a la papelera? Desaparecerá del panel de usuarios pero el historial se conserva. Puedes restaurarla después.`}
           confirmLabel="Eliminar sección"
           loading={deleting === confirmDeleteSection.id}
           onConfirm={() => handleDelete(confirmDeleteSection.id)}

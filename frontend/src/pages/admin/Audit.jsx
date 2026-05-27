@@ -14,6 +14,7 @@ const ACTION_LABELS = {
   'user.update':       { label: 'Usuario editado', color: 'text-accent bg-accent/10' },
   'user.toggle':       { label: 'Usuario activado/desactivado', color: 'text-yellow-500 bg-yellow-500/10' },
   'user.delete':       { label: 'Usuario eliminado', color: 'text-danger bg-danger/10' },
+  'user.restore':      { label: 'Usuario restaurado', color: 'text-success bg-success/10' },
   'user.sections.update': { label: 'Permisos actualizados', color: 'text-accent bg-accent/10' },
   'cleanup.run':       { label: 'Limpieza ejecutada', color: 'text-danger bg-danger/10' },
 }

@@ -294,8 +294,44 @@ export default function HistorialDetail() {
           </div>
         )}
 
-        {/* Result */}
-        {item.result && (
+        {/* Result — normal or comparison */}
+        {item.is_comparison && item.result && item.result_b ? (
+          <div className="flex flex-col gap-4">
+            <div className="bg-surface border border-border rounded-[10px] overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+                <p className="text-muted text-xs uppercase tracking-wider font-medium">
+                  Modelo principal
+                </p>
+                <div className="flex items-center gap-2">
+                  <button onClick={handleCopy} className="flex items-center gap-1.5 text-muted hover:text-fore transition-colors bg-surface2 px-2.5 py-1 rounded text-xs">
+                    {copied ? <><Check size={13} className="text-success" /> Copiado</> : <><Copy size={13} /> Copiar</>}
+                  </button>
+                  <button onClick={handleExportPdf} disabled={exportingPdf} className="flex items-center gap-1.5 text-muted hover:text-fore transition-colors bg-surface2 px-2.5 py-1 rounded text-xs disabled:opacity-50">
+                    {exportingPdf ? <Spinner size={13} /> : <Download size={13} />} PDF
+                  </button>
+                  <button onClick={handleExportDocx} disabled={exportingDocx} className="flex items-center gap-1.5 text-muted hover:text-fore transition-colors bg-surface2 px-2.5 py-1 rounded text-xs disabled:opacity-50">
+                    {exportingDocx ? <Spinner size={13} /> : <FileText size={13} />} DOCX
+                  </button>
+                  <button onClick={handleRetry} className="flex items-center gap-1.5 text-muted hover:text-fore transition-colors bg-surface2 px-2.5 py-1 rounded text-xs">
+                    <RefreshCw size={13} /> Reintentar
+                  </button>
+                </div>
+              </div>
+              <div className="px-5 py-5">
+                <MarkdownView content={item.result} />
+              </div>
+            </div>
+            <div className="bg-surface border border-border rounded-[10px] overflow-hidden">
+              <div className="px-5 py-3 border-b border-border flex items-center gap-2">
+                <p className="text-muted text-xs uppercase tracking-wider font-medium">Modelo B</p>
+                <span className="text-xs bg-accent/10 text-accent px-2 py-0.5 rounded-full">{item.model_b}</span>
+              </div>
+              <div className="px-5 py-5">
+                <MarkdownView content={item.result_b} />
+              </div>
+            </div>
+          </div>
+        ) : item.result ? (
           <div className="bg-surface border border-border rounded-[10px] overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 border-b border-border">
               <p className="text-muted text-xs uppercase tracking-wider font-medium">
@@ -347,7 +383,7 @@ export default function HistorialDetail() {
               <MarkdownView content={item.result} />
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   )

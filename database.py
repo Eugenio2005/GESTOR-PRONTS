@@ -87,12 +87,23 @@ def run_migrations():
     cols = {r[1] for r in cur.fetchall()}
     for col, defn in [
         ("is_protected",  "BOOLEAN NOT NULL DEFAULT 0"),
+        ("is_favorite",   "BOOLEAN NOT NULL DEFAULT 0"),
         ("is_comparison", "BOOLEAN NOT NULL DEFAULT 0"),
         ("model_b",       "VARCHAR(50)"),
         ("result_b",      "TEXT"),
     ]:
         if col not in cols:
             cur.execute(f"ALTER TABLE consultas ADD COLUMN {col} {defn}")
+
+    cur.execute("PRAGMA table_info(usuarios)")
+    cols = {r[1] for r in cur.fetchall()}
+    if "deleted_at" not in cols:
+        cur.execute("ALTER TABLE usuarios ADD COLUMN deleted_at DATETIME")
+
+    cur.execute("PRAGMA table_info(secciones)")
+    cols = {r[1] for r in cur.fetchall()}
+    if "deleted_at" not in cols:
+        cur.execute("ALTER TABLE secciones ADD COLUMN deleted_at DATETIME")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS admin_logs (
@@ -131,6 +142,14 @@ def run_migrations():
             created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
         )
     """)
+
+    # Indexes for frequent query patterns
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_consultas_user_created ON consultas(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_consultas_section_id ON consultas(section_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_consultas_status ON consultas(status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_consultas_is_favorite ON consultas(is_favorite)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs(created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_admin_logs_created_at ON admin_logs(created_at DESC)")
 
     conn.commit()
     conn.close()

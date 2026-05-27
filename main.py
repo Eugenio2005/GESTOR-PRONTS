@@ -55,7 +55,7 @@ app.add_middleware(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origin_regex=r".*",   # LAN deployment: accept any origin
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -66,7 +66,7 @@ OPENAI_MODELS = ["gpt-4o", "gpt-4o-mini", "o3-mini", "o1-mini", "gpt-4-turbo", "
 GEMINI_MODELS = ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"]
 MANUAL_MODELS = ["chatgpt-manual"]
 AVAILABLE_MODELS = OPENAI_MODELS + GEMINI_MODELS + MANUAL_MODELS
-COMPANY_NAME = "Pagola & Madorran"
+COMPANY_NAME = os.getenv("COMPANY_NAME", "Pagola & Madorran")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -122,7 +122,9 @@ def _sections_for_user(db: Session, user_id: int) -> list:
     restricted = {r.section_id for r in db.query(models.UserSection).all()}
     allowed = {r.section_id for r in db.query(models.UserSection)
                .filter(models.UserSection.user_id == user_id).all()}
-    return [s for s in db.query(models.Section).order_by(models.Section.sort_order).all()
+    return [s for s in db.query(models.Section)
+            .filter(models.Section.deleted_at == None)
+            .order_by(models.Section.sort_order).all()
             if s.id not in restricted or s.id in allowed]
 
 def _sec_dict(s: models.Section) -> dict:
@@ -133,6 +135,7 @@ def _sec_dict(s: models.Section) -> dict:
         "description": s.description or "",
         "quick_inputs": json.loads(s.quick_inputs or "[]"),
         "created_at": s.created_at.isoformat() if s.created_at else None,
+        "deleted_at": s.deleted_at.isoformat() if s.deleted_at else None,
     }
 
 def _user_dict(u: models.User) -> dict:
@@ -142,6 +145,7 @@ def _user_dict(u: models.User) -> dict:
         "daily_limit": u.daily_limit,
         "monthly_limit": u.monthly_limit,
         "created_at": u.created_at.isoformat() if u.created_at else None,
+        "deleted_at": u.deleted_at.isoformat() if u.deleted_at else None,
     }
 
 def _query_dict(q: models.Query) -> dict:
@@ -154,6 +158,7 @@ def _query_dict(q: models.Query) -> dict:
         "duration_ms": q.duration_ms, "status": q.status, "error_msg": q.error_msg,
         "tags": json.loads(q.tags or "[]"),
         "is_protected": bool(q.is_protected),
+        "is_favorite": bool(q.is_favorite),
         "is_comparison": bool(q.is_comparison),
         "model_b": q.model_b,
         "result_b": q.result_b,
@@ -438,6 +443,14 @@ async def api_logout(req: Request):
     req.session.pop("user", None)
     return {"ok": True}
 
+@app.get("/health")
+async def health():
+    return {"ok": True}
+
+@app.get("/api/config")
+async def api_config():
+    return {"company_name": COMPANY_NAME}
+
 @app.get("/api/sections")
 async def api_sections(req: Request, db: Session = Depends(get_db)):
     u = _require(req)
@@ -526,10 +539,13 @@ async def api_admin_stats(req: Request, db: Session = Depends(get_db)):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/admin/sections")
-async def api_admin_sections(req: Request, db: Session = Depends(get_db)):
+async def api_admin_sections(req: Request, include_deleted: bool = False, db: Session = Depends(get_db)):
     _require_admin(req)
     _seed(db)
-    secs = db.query(models.Section).order_by(models.Section.sort_order).all()
+    q = db.query(models.Section).order_by(models.Section.sort_order)
+    if not include_deleted:
+        q = q.filter(models.Section.deleted_at == None)
+    secs = q.all()
     result = []
     for s in secs:
         d = _sec_dict(s)
@@ -615,11 +631,21 @@ async def api_admin_delete_section(req: Request, sid: int, db: Session = Depends
     s = db.query(models.Section).filter(models.Section.id == sid).first()
     if s:
         _audit(db, req, "section.delete", "section", s.id, s.name)
+        s.deleted_at = datetime.now()
         db.commit()
-        log.info("Section deleted: '%s'", s.name)
-        db.delete(s)
-        db.commit()
+        log.info("Section soft-deleted: '%s'", s.name)
     return {"ok": True}
+
+@app.post("/api/admin/sections/{sid}/restore")
+async def api_admin_restore_section(req: Request, sid: int, db: Session = Depends(get_db)):
+    _require_admin(req)
+    s = db.query(models.Section).filter(models.Section.id == sid).first()
+    if not s:
+        raise HTTPException(status_code=404)
+    s.deleted_at = None
+    _audit(db, req, "section.restore", "section", s.id, s.name)
+    db.commit()
+    return _sec_dict(s)
 
 @app.post("/api/admin/sections/{sid}/duplicate")
 async def api_admin_dup_section(req: Request, sid: int, db: Session = Depends(get_db)):
@@ -668,9 +694,12 @@ def _update_permissions(db: Session, sid: int, allowed_users):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/admin/users")
-async def api_admin_users(req: Request, db: Session = Depends(get_db)):
+async def api_admin_users(req: Request, include_deleted: bool = False, db: Session = Depends(get_db)):
     _require_admin(req)
-    users = db.query(models.User).all()
+    q = db.query(models.User)
+    if not include_deleted:
+        q = q.filter(models.User.deleted_at == None)
+    users = q.all()
     result = []
     for u in users:
         d = _user_dict(u)
@@ -738,11 +767,23 @@ async def api_admin_delete_user(req: Request, uid: int, db: Session = Depends(ge
     u = db.query(models.User).filter(models.User.id == uid).first()
     if u:
         _audit(db, req, "user.delete", "user", u.id, u.display_name)
+        u.deleted_at = datetime.now()
+        u.is_active = False
         db.commit()
-        log.info("User deleted: '%s'", u.username)
-        db.delete(u)
-        db.commit()
+        log.info("User soft-deleted: '%s'", u.username)
     return {"ok": True}
+
+@app.post("/api/admin/users/{uid}/restore")
+async def api_admin_restore_user(req: Request, uid: int, db: Session = Depends(get_db)):
+    _require_admin(req)
+    u = db.query(models.User).filter(models.User.id == uid).first()
+    if not u:
+        raise HTTPException(status_code=404)
+    u.deleted_at = None
+    u.is_active = True
+    _audit(db, req, "user.restore", "user", u.id, u.display_name)
+    db.commit()
+    return _user_dict(u)
 
 @app.put("/api/admin/users/{uid}/sections")
 async def api_admin_user_set_sections(req: Request, uid: int, body: Dict[str, Any], db: Session = Depends(get_db)):
@@ -801,6 +842,54 @@ async def api_admin_queries(
         "pages": max(1, (total + per_page - 1) // per_page),
         "page": page,
     }
+
+@app.get("/api/admin/queries/export")
+async def api_admin_queries_export(
+    req: Request,
+    format: str = "csv",
+    section_id: Optional[int] = None,
+    user_id: Optional[int] = None,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    _require_admin(req)
+    from sqlalchemy import or_
+    query = db.query(models.Query).order_by(models.Query.created_at.desc())
+    if section_id:
+        query = query.filter(models.Query.section_id == section_id)
+    if user_id:
+        query = query.filter(models.Query.user_id == user_id)
+    if status:
+        query = query.filter(models.Query.status == status)
+    items = query.limit(10000).all()
+
+    if format == "pdf":
+        pdf_bytes = _build_historial_pdf(items, "Admin")
+        fname = f"consultas_admin_{datetime.now().strftime('%Y%m%d')}.pdf"
+        return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf",
+                                 headers={"Content-Disposition": f"attachment; filename={fname}"})
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["id", "fecha", "usuario", "seccion", "consulta", "resultado",
+                     "tokens_entrada", "tokens_salida", "estado", "duracion_ms", "tiene_archivo"])
+    for q in items:
+        writer.writerow([
+            q.id,
+            q.created_at.isoformat() if q.created_at else "",
+            q.user_display_name or "",
+            q.section_name or "",
+            (q.client_text or "").replace("\n", " "),
+            (q.result or "").replace("\n", " ")[:500],
+            q.input_tokens or 0, q.output_tokens or 0,
+            q.status or "", q.duration_ms or 0,
+            "sí" if q.has_file else "no",
+        ])
+    output.seek(0)
+    fname = f"consultas_admin_{datetime.now().strftime('%Y%m%d')}.csv"
+    return StreamingResponse(io.BytesIO(output.getvalue().encode("utf-8-sig")),
+                             media_type="text/csv",
+                             headers={"Content-Disposition": f"attachment; filename={fname}"})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1448,16 +1537,22 @@ def _check_one_gemini(key: str) -> dict:
 def _check_api_status_sync() -> dict:
     result = {}
     openai_key = os.getenv("OPENAI_API_KEY", "")
-    if not openai_key or openai_key.startswith("sk-..."):
-        result["openai"] = {"status": "not_configured", "label": "Sin configurar"}
-    else:
-        result["openai"] = _check_one_openai(openai_key)
-
     gemini_key = os.getenv("GEMINI_API_KEY", "")
-    if not gemini_key:
-        result["gemini"] = {"status": "not_configured", "label": "Sin configurar"}
-    else:
-        result["gemini"] = _check_one_gemini(gemini_key)
+
+    futures = {}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        if not openai_key or openai_key.startswith("sk-..."):
+            result["openai"] = {"status": "not_configured", "label": "Sin configurar"}
+        else:
+            futures["openai"] = pool.submit(_check_one_openai, openai_key)
+
+        if not gemini_key:
+            result["gemini"] = {"status": "not_configured", "label": "Sin configurar"}
+        else:
+            futures["gemini"] = pool.submit(_check_one_gemini, gemini_key)
+
+        for key, fut in futures.items():
+            result[key] = fut.result()
 
     return result
 
@@ -1581,6 +1676,7 @@ async def api_historial(
     date_to: Optional[str] = None,
     status: Optional[str] = None,
     tag: Optional[str] = None,
+    favorites: bool = False,
     db: Session = Depends(get_db),
 ):
     u = _require(req)
@@ -1606,6 +1702,8 @@ async def api_historial(
         query = query.filter(models.Query.status == status)
     if tag:
         query = query.filter(models.Query.tags.ilike(f"%{tag}%"))
+    if favorites:
+        query = query.filter(models.Query.is_favorite == True)
     total = query.count()
     items = query.offset((page - 1) * per_page).limit(per_page).all()
     return {
@@ -1632,6 +1730,16 @@ async def api_update_tags(req: Request, qid: int, body: Dict[str, Any], db: Sess
     item.tags = json.dumps([str(t).strip()[:50] for t in tags if str(t).strip()][:20])
     db.commit()
     return {"tags": json.loads(item.tags)}
+
+@app.patch("/api/historial/{qid}/favorite")
+async def api_toggle_favorite(req: Request, qid: int, db: Session = Depends(get_db)):
+    u = _require(req)
+    item = db.query(models.Query).filter(models.Query.id == qid, models.Query.user_id == u["id"]).first()
+    if not item:
+        raise HTTPException(status_code=404)
+    item.is_favorite = not item.is_favorite
+    db.commit()
+    return {"is_favorite": item.is_favorite}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1895,8 +2003,8 @@ def _audit(db: Session, req: Request, action: str, resource_type: str = None,
             admin_ip=_ip(req),
         ))
         db.flush()
-    except Exception:
-        pass  # never break main flow due to audit log failure
+    except Exception as _audit_err:
+        log.warning("Audit log failed: %s", _audit_err)
 
 @app.get("/api/admin/audit")
 async def api_admin_audit(req: Request, page: int = 1, db: Session = Depends(get_db)):

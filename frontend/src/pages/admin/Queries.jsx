@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Filter, Search, X } from 'lucide-react'
-import { getAdminQueries, getAdminQueryDetail, getAdminSections, getAdminUsers } from '../../lib/api'
+import { ChevronLeft, ChevronRight, Filter, Search, X, Download } from 'lucide-react'
+import { getAdminQueries, getAdminQueryDetail, getAdminSections, getAdminUsers, exportAdminQueries } from '../../lib/api'
 import Spinner from '../../components/Spinner'
 import MarkdownView from '../../components/MarkdownView'
 import { ToastProvider, useToast } from '../../components/Toast'
@@ -20,6 +20,7 @@ function QueriesInner() {
 
   const [sections, setSections] = useState([])
   const [users, setUsers] = useState([])
+  const [exporting, setExporting] = useState(false)
 
   const [filters, setFilters] = useState({
     section_id: '',
@@ -82,6 +83,24 @@ function QueriesInner() {
     setPage(1)
   }
 
+  async function handleExport(format) {
+    setExporting(format)
+    try {
+      const res = await exportAdminQueries(format, filters)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `consultas_admin_${new Date().toISOString().slice(0, 10)}.${format}`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast(err.message || 'Error al exportar', 'error')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const hasFilters = filters.section_id || filters.user_id || filters.status
 
   return (
@@ -93,6 +112,24 @@ function QueriesInner() {
           <p className="text-muted text-sm mt-1">
             {total.toLocaleString()} consulta{total !== 1 ? 's' : ''} en total
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleExport('csv')}
+            disabled={!!exporting}
+            className="flex items-center gap-2 bg-surface border border-border hover:border-accent text-fore text-sm font-medium px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Download size={14} />
+            {exporting === 'csv' ? 'Exportando...' : 'CSV'}
+          </button>
+          <button
+            onClick={() => handleExport('pdf')}
+            disabled={!!exporting}
+            className="flex items-center gap-2 bg-surface border border-border hover:border-accent text-fore text-sm font-medium px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Download size={14} />
+            {exporting === 'pdf' ? 'Exportando...' : 'PDF'}
+          </button>
         </div>
       </div>
 
